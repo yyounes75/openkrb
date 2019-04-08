@@ -1,0 +1,281 @@
+---
+- name: Ensure software is installed (yum)
+  yum: name={{ item }} state=present update_cache=yes
+  with_items: "{{ kerberos_packages }}"
+
+- name: Enable service krb5kdc
+  systemd:
+    name: krb5kdc
+    enabled: yes
+    masked: no
+  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+
+- name: Enable service krb5kdc
+  service:
+    name: krb5kdc
+    enabled: yes
+  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+
+- name: Enable service kadmin
+  systemd:
+    name: kadmin
+    enabled: yes
+    masked: no
+  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+
+- name: Enable service kadmin
+  service:
+    name: kadmin
+    enabled: yes
+  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+
+- name: Get folder name to copy
+  command: find /usr/share/doc -type d -name "krb5-server-ldap*"
+  register: folder_krb
+
+- name: Copy kerberos.schema to openldap folder
+  copy:
+    src: "{{ item }}/kerberos.schema"
+    dest: "/etc/openldap/schema/"
+    remote_src: True
+    mode: 0444
+  with_items:
+  - "{{ folder_krb.stdout_lines }}"
+
+- name: Copy schema_convert.conf
+  template: >
+    src=schema_convert.conf.j2
+    dest=/tmp/schema_convert.conf
+
+- name: Check if kerberos schema already exists
+  command: echo `ldapsearch -Y EXTERNAL  -H ldapi:/// -b "cn=schema,cn=config" -s sub "objectclass=*"`
+  register: checkkrbschema
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Convert schema kerberos
+  shell: slapcat -f /tmp/schema_convert.conf -F /tmp/ -n0 -s "cn={12}kerberos,cn=schema,cn=config" > /tmp/cn=kerberos.ldif
+  failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
+
+- name: Check if kerberos.ldif is not clean
+  command: cat /tmp/cn=kerberos.ldif
+  register: checkkrbclean
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Clean cn=kerberos.ldif
+  shell: head -n -8 /tmp/cn=kerberos.ldif > /tmp/cn=kerberos_clean.ldif
+  failed_when: checkkrbclean.stdout.find("modifyTimestamp") == 0
+
+- name: Inject kerberos schema
+  shell: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/cn=kerberos_clean.ldif
+  failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
+
+- name: Check if acl already exists
+  command: echo `ldapsearch -Y EXTERNAL  -H ldapi:/// -b "olcDatabase={2}hdb,cn=config" -s sub "objectclass=*"`
+  register: checkkrbacl
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Copy acl.ldif
+  template: >
+    src=acl.ldif.j2
+    dest=/tmp/acl.ldif
+
+- name: Inject acl.ldif
+  shell: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/acl.ldif
+  failed_when: checkkrbacl.stdout.find("olcAccess") == 0
+
+- name: Check if index krb already exists
+  command: echo `ldapsearch -Y EXTERNAL  -H ldapi:/// -b "olcDatabase={2}hdb,cn=config" -s sub "objectclass=*"`
+  register: checkkrbindex
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Copy dbindex.ldif
+  template: >
+    src=dbindex.ldif.j2
+    dest=/tmp/dbindex.ldif
+
+- name: Inject dbindex.ldif
+  shell: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/dbindex.ldif
+  failed_when: checkkrbindex.stdout.find("krbPrincipalName eq,pres,sub") == 0
+
+- name: Copy krb.conf for server
+  template:
+    src=krb_server.conf.j2
+    dest=/var/kerberos/krb5kdc/kdc.conf
+  when: openkrb_servers_ha == False
+
+- name: Copy krb.conf for client
+  template: >
+    src=krb_client.conf.j2
+    dest=/etc/krb5.conf
+  when: openkrb_servers_ha == False
+
+- name: Copy krb.conf for server with HA
+  template:
+    src=krb_server_ha.conf.j2
+    dest=/var/kerberos/krb5kdc/kdc.conf
+  when: openkrb_servers_ha == True
+
+- name: Copy krb.conf for client with HA
+  template: >
+    src=krb_client_ha.conf.j2
+    dest=/etc/krb5.conf
+  when: openkrb_servers_ha == True
+
+- name: Restart service slapd
+  systemd:
+    state: restarted
+    name: slapd
+  register: restart_slapd
+  until: restart_slapd.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+
+- name: Restart service slapd
+  service:
+    state: restarted
+    name: slapd
+  register: restart_slapd
+  until: restart_slapd.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+
+### Deploy Krb Container on LDAP
+- name: Check if krb container already exists
+  command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b {{ openkrb_domain }} -s sub "objectclass=*"`
+  register: checkkrbcontainer
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Create krb container in openldap
+  command: kdb5_ldap_util -D cn=ldapadm,{{ openkrb_domain }} create -subtrees cn=krbContainer,{{ openkrb_domain }} -r {{ openkrb_realm }} -s -H ldaps://{{ inventory_hostname }}:636/ -w {{ openkrb_rootpw }} -P {{ openkrb_master_password }}
+  failed_when: checkkrbcontainer.stdout.find("cn=krbContainer") == 0
+  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
+
+- name: Required packages
+  yum: name={{item}} state=installed
+  with_items:
+    - vim-common
+  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
+
+- name: Stash password to file
+  shell: echo -n "cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}#{HEX}`echo -n '{{ openkrb_krb_admin_password }}' | xxd -pu`" > /var/kerberos/krb5kdc/service.keyfile
+
+- name: Set acl
+  lineinfile:
+    path:  /var/kerberos/krb5kdc/kadm5.acl
+    regexp: 'admin@EXAMPLE.COM'
+    line: '*/admin@{{ openkrb_realm }} *'
+
+- debug:
+    msg: "{{ openkrb_servers_masters | first }}"
+
+# - local_action: file path=./files/.k5.{{ openkrb_realm }} state=absent
+
+- name: Fetch .k5 file from master1
+  fetch:
+    src: "/var/kerberos/krb5kdc/.k5.{{ openkrb_realm }}"
+    dest: ./
+    flat: yes
+  when: inventory_hostname == "{{ openkrb_servers_masters | first }}" and openkrb_servers_ha == True
+
+- name: Copy .k5 file to master2
+  copy:
+    src: "./.k5.{{ openkrb_realm }}"
+    dest: /var/kerberos/krb5kdc/
+  when: inventory_hostname == "{{ openkrb_servers_masters | last }}" and openkrb_servers_ha == True
+
+# - name: Synchro .k5 file from master1
+#   synchronize:
+#     src: "/var/kerberos/krb5kdc/.k5.{{ openkrb_realm }}"
+#     dest: /var/kerberos/krb5kdc/
+#     mode: pull
+#   #   rsync_opts: '-e ssh'
+#   delegate_to: "{{ openkrb_servers_masters | last }}"
+#   # when: inventory_hostname == "{{ openkrb_servers_masters | last }}" and openkrb_servers_ha == True
+
+- name: Enable Krb5kdc.service after slapd
+  lineinfile:
+    path: /lib/systemd/system/krb5kdc.service
+    regexp: '^After='
+    line: 'After=syslog.target network.target slapd.service'
+    state: present
+
+
+- name: Restart service slapd
+  systemd:
+    state: restarted
+    name: slapd
+  register: restart_slapd
+  until: restart_slapd.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+
+- name: Restart service slapd
+  service:
+    state: restarted
+    name: slapd
+  register: restart_slapd
+  until: restart_slapd.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+
+- name: Restart service krb5kdc
+  systemd:
+    state: restarted
+    name: krb5kdc
+  register: restart_krb5kdc
+  until: restart_krb5kdc.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+
+- name: Restart service krb5kdc
+  service:
+    state: restarted
+    name: krb5kdc
+  register: restart_krb5kdc
+  until: restart_krb5kdc.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+
+- name: Restart service kadmin
+  systemd:
+    state: restarted
+    name: kadmin
+  register: restart_kadmin
+  until: restart_kadmin.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+
+- name: Restart service kadmin
+  service:
+    state: restarted
+    name: kadmin
+  register: restart_kadmin
+  until: restart_kadmin.status.Result == "success"
+  retries: 10
+  delay: 20
+  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+
+- name: Sleep
+  command: sleep 5
+
+- name: Add admin principal
+  command: kadmin.local addprinc -pw {{ openkrb_admin_principal_password }} {{ openkrb_admin_principal }}
+  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
+  ignore_errors: yes

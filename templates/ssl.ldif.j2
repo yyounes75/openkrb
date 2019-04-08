@@ -1,0 +1,16 @@
+dn: cn=config
+changetype: modify
+replace: olcTLSCACertificateFile
+olcTLSCACertificateFile: /etc/openldap/certs/{{ security_ssl_cacert_name }}
+-
+replace: olcTLSVerifyClient
+olcTLSVerifyClient: never
+-
+replace: olcTLSCertificateFile
+olcTLSCertificateFile: /etc/openldap/certs/{{ inventory_hostname }}.cert.pem
+-
+replace: olcTLSCertificateKeyFile
+olcTLSCertificateKeyFile: /etc/openldap/certs/{{ inventory_hostname }}.key.pem
+-
+replace: olcTLSVerifyClient
+olcTLSVerifyClient: never

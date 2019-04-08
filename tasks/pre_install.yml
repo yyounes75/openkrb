@@ -1,0 +1,20 @@
+---
+- name: One Nodes
+  set_fact:
+    openkrb_servers_ha: False
+  when: ( {{ ansible_play_batch | length }} ) == 1
+
+- name: Two Nodes
+  set_fact:
+    openkrb_servers_ha: True
+  when: ( {{ ansible_play_batch | length }} ) == 2
+
+- name: Validate Number of Nodes
+  fail: msg="Error with number of nodes. Need 1 or 2 nodes"
+  when: ( {{ ansible_play_batch | length }} ) > 2
+
+# - name: Fill /etc/hosts
+#   lineinfile: dest=/etc/hosts regexp='.*{{item}}$' line='{{hostvars[item].ansible_ssh_host}} {{item}}' state=present
+#   with_items: '{{groups.all}}'
+#   tags:
+#     - hosts

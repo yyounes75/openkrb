@@ -1,0 +1,15 @@
+---
+# Preinstall
+- include: pre_install.yml
+#
+# OpenLDAP install
+- include: deploy_openldap.yml
+
+# Enable multi masters for OpenLDAP
+- include: deploy_openldap_multimaster.yml
+#
+# Kerberos install
+- include: deploy_kerberos.yml
+
+# # Securize installation
+# - include: securize.yml
