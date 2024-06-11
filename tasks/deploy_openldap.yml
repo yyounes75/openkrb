@@ -1,28 +1,50 @@
 ---
-- name: Ensure software is installed (yum)
-  yum: name={{ item }} state=present update_cache=yes
+- name: Ensure software is installed (CentOS/Redhat)
+  yum:
+    name: "{{ item }}" 
+    state: present
+    update_cache: yes
   with_items: "{{ openldap_packages }}"
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
+
+- name: Ensure software is installed (Rocky)
+  yum:
+    name: "{{ item }}"
+    enablerepo: plus 
+    state: present
+    update_cache: yes
+  with_items: "{{ openldap_packages_rocky }}"
+  when: ansible_distribution == 'Rocky'
+
+- name: Ensure software is installed (AlmaLinux)
+  dnf:
+    name: "{{ item }}"
+    enablerepo: powertools
+    state: present
+    update_cache: yes
+  with_items: "{{ openldap_packages_rocky }}"
+  when: ansible_distribution == 'AlmaLinux'
 
 - name: Enable service slapd
   systemd:
     name: slapd
     enabled: yes
     masked: no
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  # when: wait and ansible_distribution_version >= '7'
 
 - name: Enable service slapd
   service:
     name: slapd
     enabled: yes
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  # when: wait and ansible_distribution_version < '7'
 
 - name: Make sure slapd is running
   systemd: state=started name=slapd
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  # when: wait and ansible_distribution_version >= '7'
 
 - name: Make sure slapd is running
   service: state=started name=slapd
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  # when: wait and ansible_distribution_version < '7'
 
 - name: Get certs names to copy
   command: find {{ security_ssl_cert_folder }} -type f -name "*.pem"
@@ -52,43 +74,79 @@
   command: slappasswd -h {{ openkrb_password_hash }} -s {{ openkrb_rootpw }}
   register: rootpw
 
-- name: Copy DB ldif
-  template: >
-    src=db.ldif.j2
-    dest=/tmp/db.ldif
+- name: Copy files
+  block:
+    - name: Copy DB ldif
+      template: >
+        src=db.ldif.j2
+        dest=/tmp/db.ldif
 
-- name: Copy MONITOR ldif
-  template: >
-    src=monitor.ldif.j2
-    dest=/tmp/monitor.ldif
+    - name: Copy MONITOR ldif
+      template: >
+        src=monitor.ldif.j2
+        dest=/tmp/monitor.ldif
 
-- name: Copy SSL ldif
-  template: >
-    src=ssl.ldif.j2
-    dest=/tmp/ssl.ldif
+    - name: Copy SSL ldif
+      template: >
+        src=ssl.ldif.j2
+        dest=/tmp/ssl.ldif
 
-- name: Copy BASE ldif
-  template: >
-    src=base.ldif.j2
-    dest=/tmp/base.ldif
+    - name: Copy BASE ldif
+      template: >
+        src=base.ldif.j2
+        dest=/tmp/base.ldif
 
-- name: Copy USER ldif
-  template: >
-    src=myuser.ldif.j2
-    dest=/tmp/myuser.ldif
+    - name: Copy USER ldif
+      template: >
+        src=myuser.ldif.j2
+        dest=/tmp/myuser.ldif
 
-- name: Copy LOGLEVEL ldif
-  template: >
-    src=loglevel.ldif.j2
-    dest=/tmp/loglevel.ldif
+    - name: Copy LOGLEVEL ldif
+      template: >
+        src=loglevel.ldif.j2
+        dest=/tmp/loglevel.ldif
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
+
+- name: Copy files
+  block:
+    - name: Copy DB ldif
+      template:
+        src: rhel8/db.ldif.j2
+        dest: /tmp/db.ldif
+
+    - name: Copy MONITOR ldif
+      template:
+        src: rhel8/monitor.ldif.j2
+        dest: /tmp/monitor.ldif
+
+    - name: Copy SSL ldif
+      template:
+        src: rhel8/ssl.ldif.j2
+        dest: /tmp/ssl.ldif
+
+    - name: Copy BASE ldif
+      template:
+        src: rhel8/base.ldif.j2
+        dest: /tmp/base.ldif
+
+    - name: Copy USER ldif
+      template:
+        src: rhel8/myuser.ldif.j2
+        dest: /tmp/myuser.ldif
+
+    - name: Copy LOGLEVEL ldif
+      template:
+        src: rhel8/loglevel.ldif.j2
+        dest: /tmp/loglevel.ldif
+  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux'
 
 - name: Copy DB_CONFIG
-  copy:
-    src: /usr/share/openldap-servers/DB_CONFIG.example
+  template:
+    src: DB_CONFIG.example.j2
     dest: /var/lib/ldap/DB_CONFIG
     owner: ldap
     group: ldap
-    remote_src: True
+    # remote_src: True
     mode: 0644
 
 - name: Inject DB.ldif to openldap
@@ -155,25 +213,28 @@
   command: ldapadd -x -w {{ openkrb_rootpw }} -D "cn=ldapadm,{{ openkrb_domain }}" -f /tmp/base.ldif
   failed_when: checkbase.stdout.find("base,cn=schema,cn=config") == 0
 
-- name: Check whether /etc/sysconfig/slapd contains "ldaps:///"
-  command: cat /etc/sysconfig/slapd
-  register: checkldaps
-  check_mode: no
-  ignore_errors: True
-  changed_when: False
+- name: Enable LDAPS
+  block:
+    - name: Check whether /etc/sysconfig/slapd contains "ldaps:///"
+      command: cat /etc/sysconfig/slapd
+      register: checkldaps
+      check_mode: no
+      ignore_errors: True
+      changed_when: False
+    - name: Enable LDAPS 1
+      lineinfile:
+        path: /etc/sysconfig/slapd
+        regexp: '^SLAPD_URLS='
+        line: 'SLAPD_URLS="ldapi:/// ldap:/// ldaps:///"'
+        state: present
+    - name: Enable LDAPS 2
+      lineinfile:
+        path: /etc/sysconfig/slapd
+        regexp: '^SLAPD_LDAPS='
+        line: 'SLAPD_LDAPS=yes'
+        state: present
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
 
-- name: Enable LDAPS 1
-  lineinfile:
-    path: /etc/sysconfig/slapd
-    regexp: '^SLAPD_URLS='
-    line: 'SLAPD_URLS="ldapi:/// ldap:/// ldaps:///"'
-    state: present
-- name: Enable LDAPS 2
-  lineinfile:
-    path: /etc/sysconfig/slapd
-    regexp: '^SLAPD_LDAPS='
-    line: 'SLAPD_LDAPS=yes'
-    state: present
 - name: Enable LDAPS 3
   lineinfile:
     path: /etc/openldap/ldap.conf
@@ -266,33 +327,63 @@
         bind_dn: cn=ldapadm,{{ openkrb_domain }}
         bind_pw: "{{ openkrb_rootpw }}"
     - name: Set up the ACL
-      ldap_attr:
-        dn: olcDatabase={2}hdb,cn=config
-        name: olcAccess
-        values:
-          - >-
-            {0}to attrs=userPassword,shadowLastChange,userPKCS12
-            by self write
-            by anonymous auth
-            by * none
-          - >-
-            {1}to dn.subtree="cn=krbContainer,{{ openkrb_domain }}"
-            by dn.exact="cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}" write
-            by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" read
-            by * none
-          - >-
-            {2}to dn.subtree="{{ openkrb_ou_groups }},{{ openkrb_domain }}"
-            by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
-            by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
-            by dn.children="{{ openkrb_ou_groups }},{{ openkrb_domain }}" read
-            by * none
-          - >-
-            {3}to dn.subtree="{{ openkrb_ou_users }},{{ openkrb_domain }}"
-            by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
-            by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
-            by dn.children="{{ openkrb_ou_users }},{{ openkrb_domain }}" read
-            by * none
+      ldap_attrs:
+        dn: olcDatabase={2}mdb,cn=config
+        attributes:
+          olcAccess:
+            - >-
+              {0}to attrs=userPassword,shadowLastChange,userPKCS12
+              by self write
+              by anonymous auth
+              by * none
+            - >-
+              {1}to dn.subtree="cn=krbContainer,{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}" write
+              by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" read
+              by * none
+            - >-
+              {2}to dn.subtree="{{ openkrb_ou_groups }},{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
+              by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
+              by dn.children="{{ openkrb_ou_groups }},{{ openkrb_domain }}" read
+              by * none
+            - >-
+              {3}to dn.subtree="{{ openkrb_ou_users }},{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
+              by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
+              by dn.children="{{ openkrb_ou_users }},{{ openkrb_domain }}" read
+              by * none
         state: exact
+      when: ansible_distribution == 'Rocky' or ansible_distribution == 'Almalinux'
+    - name: Set up the ACL (CentOS/Redhat)
+      ldap_attrs:
+        dn: olcDatabase={2}mdb,cn=config
+        attributes:
+          olcAccess:
+            - >-
+              {0}to attrs=userPassword,shadowLastChange,userPKCS12
+              by self write
+              by anonymous auth
+              by * none
+            - >-
+              {1}to dn.subtree="cn=krbContainer,{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}" write
+              by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" read
+              by * none
+            - >-
+              {2}to dn.subtree="{{ openkrb_ou_groups }},{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
+              by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
+              by dn.children="{{ openkrb_ou_groups }},{{ openkrb_domain }}" read
+              by * none
+            - >-
+              {3}to dn.subtree="{{ openkrb_ou_users }},{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
+              by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
+              by dn.children="{{ openkrb_ou_users }},{{ openkrb_domain }}" read
+              by * none
+        state: exact
+      when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
   # when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
 
 - name: Restart service rsyslog
@@ -303,7 +394,7 @@
   until: restart_rsyslog.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: wait and ansible_distribution_version >= '7'
 
 - name: Restart service rsyslog
   service:
@@ -313,7 +404,7 @@
   until: restart_rsyslog.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: wait and ansible_distribution_version < '7'
 
 
 - name: Restart service slapd
@@ -324,7 +415,7 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: wait and ansible_distribution_version >= '7'
 
 
 - name: Restart service slapd
@@ -335,4 +426,4 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: wait and ansible_distribution_version < '7'

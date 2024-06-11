@@ -5,7 +5,22 @@ openldap_packages:                                           # Packages needed f
   - openldap-servers
   - openldap-devel
   - python-ldap
+openldap_packages_rocky:                                           # Packages needed for openkrb Don't touch
+  - openldap
+  # - compat-openldap
+  - openldap-clients
+  - openldap-servers
+  - openldap-devel
+  - python3-ldap
+openldap_packages_alma:                                           # Packages needed for openkrb Don't touch
+  - openldap
+  # - compat-openldap
+  - openldap-clients
+  - openldap-servers
+  - openldap-devel
+  - python3-ldap
 kerberos_packages:
   - krb5-server
   - krb5-server-ldap
   - krb5-workstation
+wait: true

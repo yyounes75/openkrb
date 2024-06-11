@@ -7,9 +7,9 @@
 
 # Enable multi masters for OpenLDAP
 - include: deploy_openldap_multimaster.yml
-#
+
 # Kerberos install
 - include: deploy_kerberos.yml
 
-# # Securize installation
-# - include: securize.yml
+# Securize installation
+- include: securize.yml

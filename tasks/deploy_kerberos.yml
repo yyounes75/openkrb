@@ -8,26 +8,26 @@
     name: krb5kdc
     enabled: yes
     masked: no
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  # when: wait and ansible_distribution_version >= '7'
 
 - name: Enable service krb5kdc
   service:
     name: krb5kdc
     enabled: yes
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  # when: wait and ansible_distribution_version < '7'
 
 - name: Enable service kadmin
   systemd:
     name: kadmin
     enabled: yes
     masked: no
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  # when: wait and ansible_distribution_version >= '7'
 
 - name: Enable service kadmin
   service:
     name: kadmin
     enabled: yes
-  # when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  # when: wait and ansible_distribution_version < '7'
 
 - name: Get folder name to copy
   command: find /usr/share/doc -type d -name "krb5-server-ldap*"
@@ -54,20 +54,48 @@
   ignore_errors: True
   changed_when: False
 
+- name: Temp folder
+  shell: mkdir -p /tmp/kerberosldiff
+
 - name: Convert schema kerberos
-  shell: slapcat -f /tmp/schema_convert.conf -F /tmp/ -n0 -s "cn={12}kerberos,cn=schema,cn=config" > /tmp/cn=kerberos.ldif
+  shell: slapcat -f /tmp/schema_convert.conf -F /tmp/kerberosldiff -n0 -s "cn={11}kerberos,cn=schema,cn=config" > /tmp/cn=kerberos.ldif
   failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
+  when: wait and ansible_distribution_version < '9'
+
+- name: Convert schema kerberos (Rocky 9)
+  shell: slapcat -f /tmp/schema_convert.conf -F /tmp/kerberosldiff -n0 > /tmp/cn=kerberos.ldif
+  failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
+  when: wait and ansible_distribution_version >= '9'
 
 - name: Check if kerberos.ldif is not clean
   command: cat /tmp/cn=kerberos.ldif
-  register: checkkrbclean
+  register: checkkrbclean_old
   check_mode: no
   ignore_errors: True
   changed_when: False
+  when: wait and ansible_distribution_version < '9'
+
+- name: Check if kerberos.ldif is not clean
+  command: cat /tmp/kerberosldiff/cn=config/cn=schema/cn={11}kerberos.ldif
+  register: checkkrbclean_new
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+  when: wait and ansible_distribution_version >= '9'
 
 - name: Clean cn=kerberos.ldif
   shell: head -n -8 /tmp/cn=kerberos.ldif > /tmp/cn=kerberos_clean.ldif
-  failed_when: checkkrbclean.stdout.find("modifyTimestamp") == 0
+  failed_when: checkkrbclean_old.stdout.find("modifyTimestamp") == 0
+  when: wait and ansible_distribution_version < '9'
+
+- name: Kerberos LDIF
+  block:
+    - name: Clean cn=kerberos.ldif
+      shell: head -n -8 /tmp/kerberosldiff/cn=config/cn=schema/cn={11}kerberos.ldif > /tmp/cn=kerberos_clean.ldif
+      failed_when: checkkrbclean_new.stdout.find("modifyTimestamp") == 0
+    - name: Sed
+      shell: 'sed -i "s/dn: cn={11}kerberos/cn: {11}kerberos/g" /tmp/cn=kerberos_clean.ldif'
+  when: wait and ansible_distribution_version >= '9'
 
 - name: Inject kerberos schema
   shell: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/cn=kerberos_clean.ldif
@@ -137,7 +165,7 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: wait and ansible_distribution_version >= '7'
 
 - name: Restart service slapd
   service:
@@ -147,7 +175,7 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: wait and ansible_distribution_version < '7'
 
 ### Deploy Krb Container on LDAP
 - name: Check if krb container already exists
@@ -220,7 +248,7 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: wait and ansible_distribution_version >= '7'
 
 - name: Restart service slapd
   service:
@@ -230,7 +258,7 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: wait and ansible_distribution_version < '7'
 
 - name: Restart service krb5kdc
   systemd:
@@ -240,7 +268,7 @@
   until: restart_krb5kdc.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: wait and ansible_distribution_version >= '7'
 
 - name: Restart service krb5kdc
   service:
@@ -250,7 +278,7 @@
   until: restart_krb5kdc.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: wait and ansible_distribution_version < '7'
 
 - name: Restart service kadmin
   systemd:
@@ -260,7 +288,7 @@
   until: restart_kadmin.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: wait and ansible_distribution_version >= '7'
 
 - name: Restart service kadmin
   service:
@@ -270,7 +298,7 @@
   until: restart_kadmin.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: wait and ansible_distribution_version < '7'
 
 - name: Sleep
   command: sleep 5
@@ -279,3 +307,10 @@
   command: kadmin.local addprinc -pw {{ openkrb_admin_principal_password }} {{ openkrb_admin_principal }}
   when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
   ignore_errors: yes
+
+- name: Disable default cache on RHEL8
+  replace:
+    path: /etc/krb5.conf.d/kcm_default_ccache
+    regexp: '^\s*(default_ccache_name =.*)'
+    replace: '#\1'
+  when: wait and ansible_distribution_version >= '8'

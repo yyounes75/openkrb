@@ -16,39 +16,79 @@
   command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov_mod.ldif
   failed_when: checksyncprovmod.stdout.find("syncprov.la") == 0 and openkrb_servers_ha == False
 
-- name: Copy SYNCPROV ldif
-  template: >
-    src=syncprov.ldif.j2
-    dest=/tmp/syncprov.ldif
-  when: openkrb_servers_ha == True
+- name: SYNCPROV (CentOS/Redhat)
+  block:
+    - name: Copy SYNCPROV ldif
+      template: >
+        src=syncprov.ldif.j2
+        dest=/tmp/syncprov.ldif
+      when: openkrb_servers_ha == True
 
-- name: Check if syncprov already exists
-  command: ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"
-  register: checksyncprov
-  check_mode: no
-  ignore_errors: True
-  changed_when: False
+    - name: Check if syncprov already exists
+      command: ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"
+      register: checksyncprov
+      check_mode: no
+      ignore_errors: True
+      changed_when: False
 
-- name: Deploy syncprov
-  command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov.ldif
-  when: checksyncprov.stdout.find("syncprov,olcDatabase={2}hdb,cn=config") == -1 and openkrb_servers_ha == True
+    - name: Deploy syncprov
+      command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov.ldif
+      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}hdb,cn=config") == -1 and openkrb_servers_ha == True
 
-- name: Copy RP.ldif
-  template: >
-    src=rp.ldif.j2
-    dest=/tmp/rp.ldif
-  when: openkrb_servers_ha == True
+    - name: Copy RP.ldif
+      template: >
+        src=rp.ldif.j2
+        dest=/tmp/rp.ldif
+      when: openkrb_servers_ha == True
 
-- name: Check if rp already exists
-  command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"`
-  register: checkrp
-  check_mode: no
-  ignore_errors: True
-  changed_when: False
+    - name: Check if rp already exists
+      command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"`
+      register: checkrp
+      check_mode: no
+      ignore_errors: True
+      changed_when: False
 
-- name: Deploy rp
-  command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/rp.ldif
-  failed_when: checkrp.stdout.find("olcSyncRepl") == 0 and openkrb_servers_ha == False
+    - name: Deploy rp
+      command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/rp.ldif
+      failed_when: checkrp.stdout.find("olcSyncRepl") == 0 and openkrb_servers_ha == False
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
+
+- name: SYNCPROV (Rocky)
+  block:
+    - name: Copy SYNCPROV ldif
+      template: >
+        src=rhel8/syncprov.ldif.j2
+        dest=/tmp/syncprov.ldif
+      when: openkrb_servers_ha == True
+
+    - name: Check if syncprov already exists
+      command: ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"
+      register: checksyncprov
+      check_mode: no
+      ignore_errors: True
+      changed_when: False
+
+    - name: Deploy syncprov
+      command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov.ldif
+      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}hdb,cn=config") == -1 and openkrb_servers_ha == True
+
+    - name: Copy RP.ldif
+      template: >
+        src=rhel8/rp.ldif.j2
+        dest=/tmp/rp.ldif
+      when: openkrb_servers_ha == True
+
+    - name: Check if rp already exists
+      command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"`
+      register: checkrp
+      check_mode: no
+      ignore_errors: True
+      changed_when: False
+
+    - name: Deploy rp
+      command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/rp.ldif
+      failed_when: checkrp.stdout.find("olcSyncRepl") == 0 and openkrb_servers_ha == False
+  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux'
 
 - name: Restart service slapd
   systemd:
@@ -58,7 +98,7 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: openkrb_servers_ha == True and ansible_distribution == 'CentOS' and ansible_distribution_version >= '7'
+  when: openkrb_servers_ha == True and ansible_distribution_version >= '7'
 
 - name: Restart service slapd
   service:
@@ -68,4 +108,4 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: openkrb_servers_ha == True and ansible_distribution == 'CentOS' and ansible_distribution_version < '7'
+  when: openkrb_servers_ha == True and ansible_distribution_version < '7'

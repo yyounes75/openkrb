@@ -8,6 +8,8 @@ includedir /etc/krb5.conf.d/
 
 [libdefaults]
  dns_lookup_realm = false
+ dns_lookup_kdc = false
+ udp_preference_limit = 1
  ticket_lifetime = 24h
  renew_lifetime = 90d
  forwardable = true
@@ -19,7 +21,6 @@ includedir /etc/krb5.conf.d/
    kdc = {{ openkrb_servers_masters[0] }}
    kdc = {{ openkrb_servers_masters[1] }}
    admin_server = {{ openkrb_servers_masters[0] }}
-   admin_server = {{ openkrb_servers_masters[1] }}
    default_domain = {{ openkrb_realm_minus }}
    database_module = openldap_ldapconf
 }
