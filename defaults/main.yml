@@ -24,3 +24,4 @@ kerberos_packages:
   - krb5-server-ldap
   - krb5-workstation
 wait: true
+action: server

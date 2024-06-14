@@ -354,7 +354,7 @@
               by dn.children="{{ openkrb_ou_users }},{{ openkrb_domain }}" read
               by * none
         state: exact
-      when: ansible_distribution == 'Rocky' or ansible_distribution == 'Almalinux'
+      when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux'
     - name: Set up the ACL (CentOS/Redhat)
       ldap_attrs:
         dn: olcDatabase={2}mdb,cn=config
