@@ -42,10 +42,92 @@
   with_items:
   - "{{ folder_krb.stdout_lines }}"
 
-- name: Copy schema_convert.conf
-  template: >
-    src=schema_convert.conf.j2
-    dest=/tmp/schema_convert.conf
+- debug:
+    var: ansible_distribution
+
+- name: Copy all templates (Rocky/Almalinux)
+  block:
+    - name: Copy schema_convert.conf
+      template:
+        src: templates/rhel8/schema_convert.conf.j2
+        dest: /tmp/schema_convert.conf
+
+    - name: Copy acl.ldif
+      template:
+        src: templates/rhel8/acl.ldif.j2
+        dest: /tmp/acl.ldif
+
+    - name: Copy dbindex.ldif
+      template:
+        src: templates/rhel8/dbindex.ldif.j2
+        dest: /tmp/dbindex.ldif
+
+    - name: Copy krb.conf for server
+      template:
+        src: templates/krb_server.conf.j2
+        dest: /var/kerberos/krb5kdc/kdc.conf
+      when: openkrb_servers_ha == False
+
+    - name: Copy krb.conf for client
+      template:
+        src: templates/krb_client.conf.j2
+        dest: /etc/krb5.conf
+      when: openkrb_servers_ha == False
+
+    - name: Copy krb.conf for server with HA
+      template:
+        src: templates/krb_server_ha.conf.j2
+        dest: /var/kerberos/krb5kdc/kdc.conf
+      when: openkrb_servers_ha == True
+
+    - name: Copy krb.conf for client with HA
+      template:
+        src: templates/krb_client_ha.conf.j2
+        dest: /etc/krb5.conf
+      when: openkrb_servers_ha == True
+  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux'
+
+- name: Copy all templates (CentOS/RedHat)
+  block:
+    - name: Copy schema_convert.conf
+      template:
+        src: schema_convert.conf.j2
+        dest: /tmp/schema_convert.conf
+        
+    - name: Copy acl.ldif
+      template:
+        src: acl.ldif.j2
+        dest: /tmp/acl.ldif
+
+    - name: Copy dbindex.ldif
+      template:
+        src: dbindex.ldif.j2
+        dest: /tmp/dbindex.ldif
+
+    - name: Copy krb.conf for server
+      template:
+        src: krb_server.conf.j2
+        dest: /var/kerberos/krb5kdc/kdc.conf
+      when: openkrb_servers_ha == False
+
+    - name: Copy krb.conf for client
+      template:
+        src: krb_client.conf.j2
+        dest: /etc/krb5.conf
+      when: openkrb_servers_ha == False
+
+    - name: Copy krb.conf for server with HA
+      template:
+        src: krb_server_ha.conf.j2
+        dest: /var/kerberos/krb5kdc/kdc.conf
+      when: openkrb_servers_ha == True
+
+    - name: Copy krb.conf for client with HA
+      template:
+        src: krb_client_ha.conf.j2
+        dest: /etc/krb5.conf
+      when: openkrb_servers_ha == True
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
 
 - name: Check if kerberos schema already exists
   command: echo `ldapsearch -Y EXTERNAL  -H ldapi:/// -b "cn=schema,cn=config" -s sub "objectclass=*"`
@@ -60,42 +142,42 @@
 - name: Convert schema kerberos
   shell: slapcat -f /tmp/schema_convert.conf -F /tmp/kerberosldiff -n0 -s "cn={11}kerberos,cn=schema,cn=config" > /tmp/cn=kerberos.ldif
   failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
-  when: wait and ansible_distribution_version < '9'
+  # when: wait and ansible_distribution_version < '9'
 
-- name: Convert schema kerberos (Rocky 9)
-  shell: slapcat -f /tmp/schema_convert.conf -F /tmp/kerberosldiff -n0 > /tmp/cn=kerberos.ldif
-  failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
-  when: wait and ansible_distribution_version >= '9'
+# - name: Convert schema kerberos (Rocky 9)
+#   shell: slapcat -f /tmp/schema_convert.conf -F /tmp/kerberosldiff -n0 > /tmp/cn=kerberos.ldif
+#   failed_when: checkkrbschema.stdout.find("kerberos,cn=schema,cn=config") == 0
+#   when: wait and ansible_distribution_version >= '9'
+
+# - name: Check if kerberos.ldif is not clean
+#   command: cat /tmp/cn=kerberos.ldif
+#   register: checkkrbclean_old
+#   check_mode: no
+#   ignore_errors: True
+#   changed_when: False
+  # when: wait and ansible_distribution_version < '9'
 
 - name: Check if kerberos.ldif is not clean
+  # command: cat /tmp/kerberosldiff/cn=config/cn=schema/cn={11}kerberos.ldif
   command: cat /tmp/cn=kerberos.ldif
-  register: checkkrbclean_old
-  check_mode: no
-  ignore_errors: True
-  changed_when: False
-  when: wait and ansible_distribution_version < '9'
-
-- name: Check if kerberos.ldif is not clean
-  command: cat /tmp/kerberosldiff/cn=config/cn=schema/cn={11}kerberos.ldif
   register: checkkrbclean_new
   check_mode: no
   ignore_errors: True
   changed_when: False
-  when: wait and ansible_distribution_version >= '9'
+  # when: wait and ansible_distribution_version >= '9'
+
+# - name: Clean cn=kerberos.ldif
+#   shell: head -n -8 /tmp/cn=kerberos.ldif > /tmp/cn=kerberos_clean.ldif
+#   failed_when: checkkrbclean_old.stdout.find("modifyTimestamp") == 0
+  # when: wait and ansible_distribution_version < '9'
 
 - name: Clean cn=kerberos.ldif
   shell: head -n -8 /tmp/cn=kerberos.ldif > /tmp/cn=kerberos_clean.ldif
-  failed_when: checkkrbclean_old.stdout.find("modifyTimestamp") == 0
-  when: wait and ansible_distribution_version < '9'
-
-- name: Kerberos LDIF
-  block:
-    - name: Clean cn=kerberos.ldif
-      shell: head -n -8 /tmp/kerberosldiff/cn=config/cn=schema/cn={11}kerberos.ldif > /tmp/cn=kerberos_clean.ldif
-      failed_when: checkkrbclean_new.stdout.find("modifyTimestamp") == 0
-    - name: Sed
-      shell: 'sed -i "s/dn: cn={11}kerberos/cn: {11}kerberos/g" /tmp/cn=kerberos_clean.ldif'
-  when: wait and ansible_distribution_version >= '9'
+  # shell: head -n -7 /tmp/kerberosldiff/cn=config/cn=schema/cn={11}kerberos.ldif > /tmp/cn=kerberos_clean.ldif
+  failed_when: checkkrbclean_new.stdout.find("modifyTimestamp") == 0
+# - name: Sed
+#   shell: 'sed -i "s/dn: cn={11}kerberos/cn: {11}kerberos/g" /tmp/cn=kerberos_clean.ldif'
+  # when: wait and ansible_distribution_version >= '9'
 
 - name: Inject kerberos schema
   shell: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/cn=kerberos_clean.ldif
@@ -107,11 +189,15 @@
   check_mode: no
   ignore_errors: True
   changed_when: False
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux') and ansible_distribution_version < '9'
 
-- name: Copy acl.ldif
-  template: >
-    src=acl.ldif.j2
-    dest=/tmp/acl.ldif
+- name: Check if acl already exists
+  command: echo `ldapsearch -Y EXTERNAL  -H ldapi:/// -b "olcDatabase={2}mdb,cn=config" -s sub "objectclass=*"`
+  register: checkkrbacl
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux' and ansible_distribution_version >= '9'
 
 - name: Inject acl.ldif
   shell: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/acl.ldif
@@ -123,39 +209,19 @@
   check_mode: no
   ignore_errors: True
   changed_when: False
+  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
 
-- name: Copy dbindex.ldif
-  template: >
-    src=dbindex.ldif.j2
-    dest=/tmp/dbindex.ldif
+- name: Check if index krb already exists
+  command: echo `ldapsearch -Y EXTERNAL  -H ldapi:/// -b "olcDatabase={2}mdb,cn=config" -s sub "objectclass=*"`
+  register: checkkrbindex
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux' and ansible_distribution_version >= '9'
 
 - name: Inject dbindex.ldif
   shell: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/dbindex.ldif
   failed_when: checkkrbindex.stdout.find("krbPrincipalName eq,pres,sub") == 0
-
-- name: Copy krb.conf for server
-  template:
-    src=krb_server.conf.j2
-    dest=/var/kerberos/krb5kdc/kdc.conf
-  when: openkrb_servers_ha == False
-
-- name: Copy krb.conf for client
-  template: >
-    src=krb_client.conf.j2
-    dest=/etc/krb5.conf
-  when: openkrb_servers_ha == False
-
-- name: Copy krb.conf for server with HA
-  template:
-    src=krb_server_ha.conf.j2
-    dest=/var/kerberos/krb5kdc/kdc.conf
-  when: openkrb_servers_ha == True
-
-- name: Copy krb.conf for client with HA
-  template: >
-    src=krb_client_ha.conf.j2
-    dest=/etc/krb5.conf
-  when: openkrb_servers_ha == True
 
 - name: Restart service slapd
   systemd:
@@ -178,23 +244,11 @@
   when: wait and ansible_distribution_version < '7'
 
 ### Deploy Krb Container on LDAP
-- name: Check if krb container already exists
-  command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b {{ openkrb_domain }} -s sub "objectclass=*"`
-  register: checkkrbcontainer
-  check_mode: no
-  ignore_errors: True
-  changed_when: False
-
-- name: Create krb container in openldap
-  command: kdb5_ldap_util -D cn=ldapadm,{{ openkrb_domain }} create -subtrees cn=krbContainer,{{ openkrb_domain }} -r {{ openkrb_realm }} -s -H ldaps://{{ inventory_hostname }}:636/ -w {{ openkrb_rootpw }} -P {{ openkrb_master_password }}
-  failed_when: checkkrbcontainer.stdout.find("cn=krbContainer") == 0
-  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
-
 - name: Required packages
   yum: name={{item}} state=installed
   with_items:
     - vim-common
-  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
+  # when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
 
 - name: Stash password to file
   shell: echo -n "cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}#{HEX}`echo -n '{{ openkrb_krb_admin_password }}' | xxd -pu`" > /var/kerberos/krb5kdc/service.keyfile
@@ -205,8 +259,21 @@
     regexp: 'admin@EXAMPLE.COM'
     line: '*/admin@{{ openkrb_realm }} *'
 
+- name: Check if krb container already exists
+  command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b {{ openkrb_domain }} -s sub "objectclass=*"`
+  register: checkkrbcontainer
+  check_mode: no
+  ignore_errors: True
+  changed_when: False
+
+- name: Create krb container in openldap
+  shell: "sleep 30 && kdb5_ldap_util -D cn=ldapadm,{{ openkrb_domain }} create -subtrees cn=krbContainer,{{ openkrb_domain }} -r {{ openkrb_realm }} -s -H ldaps://{{ inventory_hostname }}:636/ -w {{ openkrb_rootpw }} -P {{ openkrb_master_password }}"
+  failed_when: checkkrbcontainer.stdout.find("cn=krbContainer") == 0
+  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"
+  register: createkrbcontainer
+
 - debug:
-    msg: "{{ openkrb_servers_masters | first }}"
+    msg: "{{ createkrbcontainer }}"
 
 # - local_action: file path=./files/.k5.{{ openkrb_realm }} state=absent
 
@@ -239,7 +306,6 @@
     line: 'After=syslog.target network.target slapd.service'
     state: present
 
-
 - name: Restart service slapd
   systemd:
     state: restarted
@@ -264,6 +330,7 @@
   systemd:
     state: restarted
     name: krb5kdc
+    daemon_reload: true
   register: restart_krb5kdc
   until: restart_krb5kdc.status.Result == "success"
   retries: 10
@@ -274,6 +341,7 @@
   service:
     state: restarted
     name: krb5kdc
+    daemon_reload: true
   register: restart_krb5kdc
   until: restart_krb5kdc.status.Result == "success"
   retries: 10

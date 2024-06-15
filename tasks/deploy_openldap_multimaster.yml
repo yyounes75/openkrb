@@ -6,7 +6,7 @@
   when: openkrb_servers_ha == True
 
 - name: Check if syncprov_mod already exists
-  shell: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=module,cn=config" -s sub "objectclass=*"`
+  shell: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=module{0},cn=config" -s sub "objectclass=*"`
   register: checksyncprovmod
   check_mode: no
   ignore_errors: True
@@ -70,7 +70,7 @@
 
     - name: Deploy syncprov
       command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov.ldif
-      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}hdb,cn=config") == -1 and openkrb_servers_ha == True
+      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}mdb,cn=config") == -1 and openkrb_servers_ha == True
 
     - name: Copy RP.ldif
       template: >
@@ -98,14 +98,6 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: openkrb_servers_ha == True and ansible_distribution_version >= '7'
 
-- name: Restart service slapd
-  service:
-    state: restarted
-    name: slapd
-  register: restart_slapd
-  until: restart_slapd.status.Result == "success"
-  retries: 10
-  delay: 20
-  when: openkrb_servers_ha == True and ansible_distribution_version < '7'
+- name: Sleep
+  command: sleep 10

@@ -1,0 +1,74 @@
+### Create users and refined ACL
+- name: Create users and refined ACL
+  block:
+    - name: Get SSHA password
+      command: slappasswd -h {{ openkrb_password_hash }} -s {{ openkrb_krb_admin_password }}
+      register: krbadminpw
+    - name: Create krbadm
+      ldap_entry:
+        dn: cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}
+        objectClass:
+          - simpleSecurityObject
+          - organizationalRole
+        attributes:
+          description: Krb admin
+          userPassword: "{{ krbadminpw.stdout }}"
+        bind_dn: cn=ldapadm,{{ openkrb_domain }}
+        bind_pw: "{{ openkrb_rootpw }}"
+    - name: Get SSHA password
+      command: slappasswd -h {{ openkrb_password_hash }} -s {{ openkrb_hdpadm_admin_password }}
+      register: hdpadminpw
+    - name: Create hdpadm
+      ldap_entry:
+        dn: cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}
+        objectClass:
+          - simpleSecurityObject
+          - organizationalRole
+        attributes:
+          description: HDP admin
+          userPassword: "{{ hdpadminpw.stdout }}"
+        bind_dn: cn=ldapadm,{{ openkrb_domain }}
+        bind_pw: "{{ openkrb_rootpw }}"
+    - name: Get SSHA password
+      command: slappasswd -h {{ openkrb_password_hash }} -s {{ openkrb_sssd_admin_password }}
+      register: sssdadminpw
+    - name: Create sssdadm
+      ldap_entry:
+        dn: cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}
+        objectClass:
+          - simpleSecurityObject
+          - organizationalRole
+        attributes:
+          description: SSSD admin
+          userPassword: "{{ sssdadminpw.stdout }}"
+        bind_dn: cn=ldapadm,{{ openkrb_domain }}
+        bind_pw: "{{ openkrb_rootpw }}"
+    - name: Set up the ACL (Rocky/Almalinux)
+      ldap_attrs:
+        dn: olcDatabase={2}mdb,cn=config
+        attributes:
+          olcAccess:
+            - >-
+              {0}to attrs=userPassword,shadowLastChange,userPKCS12
+              by self write
+              by anonymous auth
+              by * none
+            - >-
+              {1}to dn.subtree="cn=krbContainer,{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_krb_admin_user }},{{ openkrb_domain }}" write
+              by dn.base="gidNumber=0+uidNumber=0,cn=peercred,cn=external,cn=auth" read
+              by * none
+            - >-
+              {2}to dn.subtree="{{ openkrb_ou_groups }},{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
+              by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
+              by dn.children="{{ openkrb_ou_groups }},{{ openkrb_domain }}" read
+              by * none
+            - >-
+              {3}to dn.subtree="{{ openkrb_ou_users }},{{ openkrb_domain }}"
+              by dn.exact="cn={{ openkrb_sssd_admin_user }},{{ openkrb_domain }}" read
+              by dn.exact="cn={{ openkrb_hdpadm_admin_user }},{{ openkrb_domain }}" read
+              by dn.children="{{ openkrb_ou_users }},{{ openkrb_domain }}" read
+              by * none
+        state: exact
+  when: inventory_hostname == "{{ openkrb_servers_masters | first }}"

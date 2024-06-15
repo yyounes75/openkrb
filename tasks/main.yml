@@ -1,15 +1,18 @@
 ---
 # Preinstall
-- include: pre_install.yml
+- import_tasks: pre_install.yml
 #
 # OpenLDAP install
-- include: deploy_openldap.yml
+- import_tasks: deploy_openldap.yml
 
 # Enable multi masters for OpenLDAP
-- include: deploy_openldap_multimaster.yml
+- import_tasks: deploy_openldap_multimaster.yml
+
+# Create users
+- import_tasks: create_users.yml
 
 # Kerberos install
-- include: deploy_kerberos.yml
+- import_tasks: deploy_kerberos.yml
 
-# Securize installation
-- include: securize.yml
+# # Securize installation
+# - import_tasks: securize.yml
