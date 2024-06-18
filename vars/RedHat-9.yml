@@ -1,0 +1,15 @@
+openldap_packages:                                           # Packages needed for openkrb Don't touch
+  - openldap
+  # - compat-openldap
+  - openldap-clients
+  - openldap-servers
+  - openldap-devel
+  - python3-ldap
+kerberos_packages:
+  - krb5-server
+  - krb5-server-ldap
+  - krb5-workstation
+plus_repo: powertools
+src_template: rhel9
+olc_engine: mdb
+olc_config: olcDatabase={2}mdb,cn=config
