@@ -1,37 +1,28 @@
 ---
-- name: Ensure software is installed (AlmaLinux)
+- name: Ensure software is installed (Alma/Rocky/CentOS/RedHat 8/9)
   block:
     - name: Enable EPEL repo
       dnf:
         name: epel-release
-        enablerepo: powertools
+        enablerepo: "{{plus_repo}}"
         state: present
         update_cache: yes
     - name: Install packages
       dnf:
         name: "{{ item }}"
-        enablerepo: powertools
+        enablerepo: "{{plus_repo}}"
         state: present
         update_cache: yes
-      with_items: "{{ openldap_packages_rocky }}"
-  when: ansible_distribution == 'AlmaLinux'
+      with_items: "{{ openldap_packages }}"
+  when: ansible_os_family.lower() == 'redhat' and ansible_distribution_major_version >= '8'
 
-- name: Ensure software is installed (CentOS/Redhat)
+- name: Ensure software is installed (CentOS/Redhat 7)
   yum:
     name: "{{ item }}" 
     state: present
     update_cache: yes
   with_items: "{{ openldap_packages }}"
-  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
-
-- name: Ensure software is installed (Rocky)
-  yum:
-    name: "{{ item }}"
-    enablerepo: plus 
-    state: present
-    update_cache: yes
-  with_items: "{{ openldap_packages_rocky }}"
-  when: ansible_distribution == 'Rocky'
+  when: ansible_os_family.lower() == 'redhat' and ansible_distribution_major_version < '8'
 
 - name: Enable service slapd
   systemd:
@@ -85,68 +76,35 @@
 - name: Copy files
   block:
     - name: Copy DB ldif
-      template: >
-        src=db.ldif.j2
-        dest=/tmp/db.ldif
-
-    - name: Copy MONITOR ldif
-      template: >
-        src=monitor.ldif.j2
-        dest=/tmp/monitor.ldif
-
-    - name: Copy SSL ldif
-      template: >
-        src=ssl.ldif.j2
-        dest=/tmp/ssl.ldif
-
-    - name: Copy BASE ldif
-      template: >
-        src=base.ldif.j2
-        dest=/tmp/base.ldif
-
-    - name: Copy USER ldif
-      template: >
-        src=myuser.ldif.j2
-        dest=/tmp/myuser.ldif
-
-    - name: Copy LOGLEVEL ldif
-      template: >
-        src=loglevel.ldif.j2
-        dest=/tmp/loglevel.ldif
-  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
-
-- name: Copy files
-  block:
-    - name: Copy DB ldif
       template:
-        src: rhel8/db.ldif.j2
+        src: "{{ src_template }}/db.ldif.j2"
         dest: /tmp/db.ldif
 
     - name: Copy MONITOR ldif
       template:
-        src: rhel8/monitor.ldif.j2
+        src: "{{ src_template }}/monitor.ldif.j2"
         dest: /tmp/monitor.ldif
 
     - name: Copy SSL ldif
       template:
-        src: rhel8/ssl.ldif.j2
+        src: "{{ src_template }}/ssl.ldif.j2"
         dest: /tmp/ssl.ldif
 
     - name: Copy BASE ldif
       template:
-        src: rhel8/base.ldif.j2
+        src: "{{ src_template }}/base.ldif.j2"
         dest: /tmp/base.ldif
 
     - name: Copy USER ldif
       template:
-        src: rhel8/myuser.ldif.j2
+        src: "{{ src_template }}/myuser.ldif.j2"
         dest: /tmp/myuser.ldif
 
     - name: Copy LOGLEVEL ldif
       template:
-        src: rhel8/loglevel.ldif.j2
+        src: "{{ src_template }}/loglevel.ldif.j2"
         dest: /tmp/loglevel.ldif
-  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux'
+
 
 - name: Copy DB_CONFIG
   template:
@@ -241,7 +199,7 @@
         regexp: '^SLAPD_LDAPS='
         line: 'SLAPD_LDAPS=yes'
         state: present
-  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
+  when: (ansible_os_family.lower == 'redhat') and (ansible_distribution_version < '8') 
 
 - name: Enable LDAPS 3
   lineinfile:
@@ -297,17 +255,7 @@
   until: restart_rsyslog.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution_version >= '7'
-
-- name: Restart service rsyslog
-  service:
-    state: restarted
-    name: rsyslog
-  register: restart_rsyslog
-  until: restart_rsyslog.status.Result == "success"
-  retries: 10
-  delay: 20
-  when: wait and ansible_distribution_version < '7'
+  when: wait
 
 - name: Restart service slapd
   systemd:
@@ -317,15 +265,4 @@
   until: restart_slapd.status.Result == "success"
   retries: 10
   delay: 20
-  when: wait and ansible_distribution_version >= '7'
-
-
-- name: Restart service slapd
-  service:
-    state: restarted
-    name: slapd
-  register: restart_slapd
-  until: restart_slapd.status.Result == "success"
-  retries: 10
-  delay: 20
-  when: wait and ansible_distribution_version < '7'
+  when: wait

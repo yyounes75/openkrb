@@ -43,9 +43,9 @@
           userPassword: "{{ sssdadminpw.stdout }}"
         bind_dn: cn=ldapadm,{{ openkrb_domain }}
         bind_pw: "{{ openkrb_rootpw }}"
-    - name: Set up the ACL (Rocky/Almalinux)
+    - name: Set up the ACL
       ldap_attrs:
-        dn: olcDatabase={2}mdb,cn=config
+        dn: olcDatabase={2}{{olc_engine}},cn=config
         attributes:
           olcAccess:
             - >-

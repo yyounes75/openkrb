@@ -16,12 +16,12 @@
   command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov_mod.ldif
   failed_when: checksyncprovmod.stdout.find("syncprov.la") == 0 and openkrb_servers_ha == False
 
-- name: SYNCPROV (CentOS/Redhat)
+- name: SYNCPROV
   block:
     - name: Copy SYNCPROV ldif
-      template: >
-        src=syncprov.ldif.j2
-        dest=/tmp/syncprov.ldif
+      template:
+        src: "{{src_template}}/syncprov.ldif.j2"
+        dest: /tmp/syncprov.ldif
       when: openkrb_servers_ha == True
 
     - name: Check if syncprov already exists
@@ -33,12 +33,12 @@
 
     - name: Deploy syncprov
       command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov.ldif
-      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}hdb,cn=config") == -1 and openkrb_servers_ha == True
+      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}{{olc_engine}},cn=config") == -1 and openkrb_servers_ha == True
 
     - name: Copy RP.ldif
-      template: >
-        src=rp.ldif.j2
-        dest=/tmp/rp.ldif
+      template:
+        src: "{{src_template}}/rp.ldif.j2"
+        dest: /tmp/rp.ldif
       when: openkrb_servers_ha == True
 
     - name: Check if rp already exists
@@ -51,44 +51,6 @@
     - name: Deploy rp
       command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/rp.ldif
       failed_when: checkrp.stdout.find("olcSyncRepl") == 0 and openkrb_servers_ha == False
-  when: (ansible_distribution != 'Rocky') and (ansible_distribution != 'AlmaLinux')
-
-- name: SYNCPROV (Rocky)
-  block:
-    - name: Copy SYNCPROV ldif
-      template: >
-        src=rhel8/syncprov.ldif.j2
-        dest=/tmp/syncprov.ldif
-      when: openkrb_servers_ha == True
-
-    - name: Check if syncprov already exists
-      command: ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"
-      register: checksyncprov
-      check_mode: no
-      ignore_errors: True
-      changed_when: False
-
-    - name: Deploy syncprov
-      command: ldapadd -Y EXTERNAL -H ldapi:/// -f /tmp/syncprov.ldif
-      when: checksyncprov.stdout.find("syncprov,olcDatabase={2}mdb,cn=config") == -1 and openkrb_servers_ha == True
-
-    - name: Copy RP.ldif
-      template: >
-        src=rhel8/rp.ldif.j2
-        dest=/tmp/rp.ldif
-      when: openkrb_servers_ha == True
-
-    - name: Check if rp already exists
-      command: echo `ldapsearch -Y EXTERNAL -H ldapi:/// -b "cn=config" -s sub "objectclass=*"`
-      register: checkrp
-      check_mode: no
-      ignore_errors: True
-      changed_when: False
-
-    - name: Deploy rp
-      command: ldapmodify -Y EXTERNAL -H ldapi:/// -f /tmp/rp.ldif
-      failed_when: checkrp.stdout.find("olcSyncRepl") == 0 and openkrb_servers_ha == False
-  when: ansible_distribution == 'Rocky' or ansible_distribution == 'AlmaLinux'
 
 - name: Restart service slapd
   systemd:
